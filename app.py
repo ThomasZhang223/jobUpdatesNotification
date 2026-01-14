@@ -71,6 +71,19 @@ def format_email_body(new_listings: list[Listing], repo_name: str) -> str:
     return body
 
 
+def format_no_changes_email(top_listing: Listing, repo_name: str) -> str:
+    """Format email body when no new listings found."""
+    body = f"No new listings found in {repo_name}.\n\n"
+    body += "Current top listing:\n"
+    body += f"Company: {top_listing.company}\n"
+    body += f"Role: {top_listing.role}\n"
+    body += f"Location: {top_listing.location}\n"
+    body += f"Date Posted: {top_listing.date_posted}\n"
+    body += f"Apply: {top_listing.apply_link}\n"
+
+    return body
+
+
 def send_notification(new_listings: list[Listing], repo_name: str, emails: list[str]) -> None:
     """Send email notification for new listings."""
     if not emails:
@@ -82,6 +95,21 @@ def send_notification(new_listings: list[Listing], repo_name: str, emails: list[
             sender=settings.mail_username,
             recipients=emails,
             body=format_email_body(new_listings, repo_name),
+        )
+        mail.send(msg)
+
+
+def send_no_changes_notification(top_listing: Listing, repo_name: str, emails: list[str]) -> None:
+    """Send email notification when no new listings found."""
+    if not emails:
+        return
+
+    with app.app_context():
+        msg = Message(
+            subject=f"No New Listings - {repo_name}",
+            sender=settings.mail_username,
+            recipients=emails,
+            body=format_no_changes_email(top_listing, repo_name),
         )
         mail.send(msg)
 
@@ -109,8 +137,10 @@ def scrape():
                     "listings": [l.to_dict() for l in new_listings],
                 }
             else:
+                send_no_changes_notification(listings[0], "Canadian Tech Internships 2026", emails)
                 results["canadian_internships"] = {
                     "status": "no_changes",
+                    "top_listing": listings[0].to_dict(),
                 }
 
             # Update state with new top listing
