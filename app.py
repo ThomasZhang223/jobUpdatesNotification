@@ -4,7 +4,7 @@ from flask import Flask, jsonify, request
 from flask_mail import Mail, Message
 
 from config import get_settings
-from scraper import Listing, scrape_canadian_internships
+from scraper import Listing, scrape_canadian_internships, scrape_us_internships
 
 
 app = Flask(__name__)
@@ -22,12 +22,35 @@ mail = Mail(app)
 STATE_FILE = Path(__file__).parent / "state.json"
 
 
+DEFAULT_STATE = {
+    "emails": ["thomaszhang223@gmail.com"],
+    "canadian_internships": {
+        "company": "Genesys",
+        "role": "Software Development Intern - Recording and QM",
+        "location": "Toronto, ON",
+        "apply_link": "https://genesys.wd1.myworkdayjobs.com/en-US/Genesys/job/Toronto-Flexible/Software-Development-Intern--Recording-and-QM--12-16mos-_JR109189",
+        "date_posted": "Jan 9",
+    },
+    "us_internships": {
+        "company": "Kinaxis",
+        "role": "Intern/Co-op Software Developer - Core Algorithms",
+        "location": "Ottawa, ON, Canada",
+        "apply_link": "https://careers-kinaxis.icims.com/jobs/34146/job?mobile=true&needsRedirect=false&utm_source=Simplify&ref=Simplify",
+        "date_posted": "0d",
+    },
+}
+
+
 def load_state() -> dict:
-    """Load state from JSON file."""
+    """Load state from JSON file, creating with defaults if not exists."""
     if STATE_FILE.exists():
         with open(STATE_FILE, "r") as f:
             return json.load(f)
-    return {}
+
+    # Create file with default state
+    with open(STATE_FILE, "w") as f:
+        json.dump(DEFAULT_STATE, f, indent=2)
+    return DEFAULT_STATE.copy()
 
 
 def save_state(state: dict) -> None:
@@ -149,6 +172,34 @@ def scrape():
     except Exception as e:
         results["canadian_internships"] = {"status": "error", "message": str(e)}
 
+    # Scrape US Tech Internships
+    try:
+        listings = scrape_us_internships(settings.us_internships_url)
+
+        if listings:
+            stored_top = state.get("us_internships")
+            new_listings = find_new_listings(listings, stored_top)
+
+            if new_listings:
+                send_notification(new_listings, "US Summer 2026 Internships", emails)
+                results["us_internships"] = {
+                    "status": "new_listings",
+                    "count": len(new_listings),
+                    "listings": [l.to_dict() for l in new_listings],
+                }
+            else:
+                send_no_changes_notification(listings[0], "US Summer 2026 Internships", emails)
+                results["us_internships"] = {
+                    "status": "no_changes",
+                    "top_listing": listings[0].to_dict(),
+                }
+
+            # Update state with new top listing
+            state["us_internships"] = listings[0].to_dict()
+
+    except Exception as e:
+        results["us_internships"] = {"status": "error", "message": str(e)}
+
     save_state(state)
     return jsonify(results)
 
@@ -181,5 +232,5 @@ def subscribe(email: str):
 
 if __name__ == "__main__":
     import os
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
