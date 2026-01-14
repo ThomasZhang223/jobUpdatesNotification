@@ -16,7 +16,7 @@ The service periodically checks for new internship listings. When new positions 
 To receive notifications, send a POST request:
 
 ```bash
-curl -X POST https://jobupdatesnotification.onrender.com/subscribe/your-email@example.com
+curl -X POST https://jobupdatesnotification.onrender.com/subscribe/<your-email@example.com>
 ```
 
 **Response:**
@@ -36,7 +36,7 @@ curl -X POST https://jobupdatesnotification.onrender.com/subscribe/your-email@ex
 To stop receiving notifications:
 
 ```bash
-curl -X DELETE https://jobupdatesnotification.onrender.com/unsubscribe/your-email@example.com/your-private-key
+curl -X DELETE https://jobupdatesnotification.onrender.com/unsubscribe/<your-email@example.com>/<your-private-key>
 ```
 
 ## Privacy
