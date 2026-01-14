@@ -129,6 +129,7 @@ def send_notification(new_listings: list[Listing], repo_name: str, emails: list[
 @require_api_key
 def scrape():
     """Scrape repos and send notifications for new listings."""
+    print("[SCRAPE] Starting...", flush=True)
     state = load_state()
     emails_dict = state.get("emails", {})
     emails = list(emails_dict.keys())
@@ -136,14 +137,18 @@ def scrape():
 
     # Scrape Canadian Tech Internships
     try:
+        print("[SCRAPE] Fetching Canadian internships...", flush=True)
         listings = scrape_canadian_internships(settings.canadian_internships_url)
+        print(f"[SCRAPE] Got {len(listings)} Canadian listings", flush=True)
 
         if listings:
             stored_top = state.get("canadian_internships")
             new_listings = find_new_listings(listings, stored_top)
 
             if new_listings:
+                print(f"[SCRAPE] Sending email for {len(new_listings)} new Canadian listings...", flush=True)
                 send_notification(new_listings, "Canadian Tech Internships 2026", emails)
+                print("[SCRAPE] Email sent for Canadian", flush=True)
                 results["canadian_internships"] = {
                     "status": "new_listings",
                     "count": len(new_listings),
@@ -162,14 +167,18 @@ def scrape():
 
     # Scrape US Tech Internships
     try:
+        print("[SCRAPE] Fetching US internships...", flush=True)
         listings = scrape_us_internships(settings.us_internships_url)
+        print(f"[SCRAPE] Got {len(listings)} US listings", flush=True)
 
         if listings:
             stored_top = state.get("us_internships")
             new_listings = find_new_listings(listings, stored_top)
 
             if new_listings:
+                print(f"[SCRAPE] Sending email for {len(new_listings)} new US listings...", flush=True)
                 send_notification(new_listings, "US Summer 2026 Internships", emails)
+                print("[SCRAPE] Email sent for US", flush=True)
                 results["us_internships"] = {
                     "status": "new_listings",
                     "count": len(new_listings),
@@ -187,6 +196,7 @@ def scrape():
         results["us_internships"] = {"status": "error", "message": str(e)}
 
     save_state(state)
+    print("[SCRAPE] Done!", flush=True)
     return jsonify(results)
 
 

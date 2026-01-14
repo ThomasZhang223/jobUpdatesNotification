@@ -2,6 +2,10 @@ import requests
 from bs4 import BeautifulSoup
 from dataclasses import dataclass
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
 
 @dataclass
 class Listing:
@@ -42,7 +46,7 @@ class Listing:
 
 def scrape_canadian_internships(url: str) -> list[Listing]:
     """Scrape the Canadian Tech Internships repo."""
-    response = requests.get(url)
+    response = requests.get(url, headers=HEADERS, timeout=30)
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
@@ -90,7 +94,7 @@ def scrape_canadian_internships(url: str) -> list[Listing]:
 
 def scrape_us_internships(url: str) -> list[Listing]:
     """Scrape the SimplifyJobs US Internships repo."""
-    response = requests.get(url)
+    response = requests.get(url, headers=HEADERS, timeout=300)
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
