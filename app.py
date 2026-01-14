@@ -1,5 +1,10 @@
 import json
+import re
+import secrets
+from functools import wraps
 from pathlib import Path
+
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 from flask import Flask, jsonify, request
 from flask_mail import Mail, Message
 
@@ -22,8 +27,19 @@ mail = Mail(app)
 STATE_FILE = Path(__file__).parent / "state.json"
 
 
+def require_api_key(f):
+    """Decorator to require API key for protected endpoints."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        api_key = request.headers.get("API-Key")
+        if api_key != settings.api_key:
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
 DEFAULT_STATE = {
-    "emails": ["thomaszhang223@gmail.com"],
+    "emails": {},
     "canadian_internships": {
         "company": "Genesys",
         "role": "Software Development Intern - Recording and QM",
@@ -116,7 +132,7 @@ def send_notification(new_listings: list[Listing], repo_name: str, emails: list[
         msg = Message(
             subject=f"New Internship Listings - {repo_name}",
             sender=settings.mail_username,
-            recipients=emails,
+            bcc=emails,
             body=format_email_body(new_listings, repo_name),
         )
         mail.send(msg)
@@ -131,17 +147,19 @@ def send_no_changes_notification(top_listing: Listing, repo_name: str, emails: l
         msg = Message(
             subject=f"No New Listings - {repo_name}",
             sender=settings.mail_username,
-            recipients=emails,
+            bcc=emails,
             body=format_no_changes_email(top_listing, repo_name),
         )
         mail.send(msg)
 
 
 @app.route("/scrape", methods=["GET"])
+@require_api_key
 def scrape():
     """Scrape repos and send notifications for new listings."""
     state = load_state()
-    emails = state.get("emails", [])
+    emails_dict = state.get("emails", {})
+    emails = list(emails_dict.keys())
     results = {}
 
     # Scrape Canadian Tech Internships
@@ -210,24 +228,92 @@ def health():
     return jsonify({"status": "ok"})
 
 
+@app.route("/emails", methods=["GET"])
+@require_api_key
+def get_emails():
+    """Get all subscribed emails."""
+    state = load_state()
+    emails_dict = state.get("emails", {})
+    return jsonify({"emails": list(emails_dict.keys())})
+
+
+@app.route("/listings", methods=["GET"])
+@require_api_key
+def get_listings():
+    """Get current top listings."""
+    state = load_state()
+    return jsonify({
+        "canadian_internships": state.get("canadian_internships"),
+        "us_internships": state.get("us_internships"),
+    })
+
+
 @app.route("/subscribe/<email>", methods=["POST"])
 def subscribe(email: str):
-    """Add a new email to the notification list."""
-    email = email.strip()
+    """Add a new email to the notification list. Returns private key for unsubscribing."""
+    email = email.strip().lower()
     if not email:
         return jsonify({"error": "Email cannot be empty"}), 400
 
-    state = load_state()
-    emails = state.get("emails", [])
+    if not EMAIL_REGEX.match(email):
+        return jsonify({"error": "Invalid email format"}), 400
 
-    if email in emails:
+    state = load_state()
+    emails_dict = state.get("emails", {})
+
+    if email in emails_dict:
         return jsonify({"message": "Already subscribed", "email": email})
 
-    emails.append(email)
-    state["emails"] = emails
+    # Generate private key for this user
+    private_key = secrets.token_hex(16)
+    emails_dict[email] = private_key
+    state["emails"] = emails_dict
     save_state(state)
 
-    return jsonify({"message": "Subscribed", "email": email})
+    return jsonify({
+        "message": "Subscribed",
+        "email": email,
+        "private_key": private_key,
+        "note": "Save this key to unsubscribe later"
+    })
+
+
+@app.route("/unsubscribe/<email>/<key>", methods=["DELETE"])
+def unsubscribe(email: str, key: str):
+    """Public endpoint for users to unsubscribe using their private key."""
+    email = email.strip()
+    state = load_state()
+    emails_dict = state.get("emails", {})
+
+    if email not in emails_dict:
+        return jsonify({"error": "Email not found"}), 404
+
+    if emails_dict[email] != key:
+        return jsonify({"error": "Invalid key"}), 403
+
+    del emails_dict[email]
+    state["emails"] = emails_dict
+    save_state(state)
+
+    return jsonify({"message": "Unsubscribed", "email": email})
+
+
+@app.route("/admin/unsubscribe/<email>", methods=["DELETE"])
+@require_api_key
+def admin_unsubscribe(email: str):
+    """Admin endpoint to remove any email."""
+    email = email.strip()
+    state = load_state()
+    emails_dict = state.get("emails", {})
+
+    if email not in emails_dict:
+        return jsonify({"error": "Email not found"}), 404
+
+    del emails_dict[email]
+    state["emails"] = emails_dict
+    save_state(state)
+
+    return jsonify({"message": "Unsubscribed", "email": email})
 
 
 if __name__ == "__main__":

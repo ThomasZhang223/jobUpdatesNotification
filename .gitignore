@@ -1,5 +1,6 @@
 .env
 state.json
+ADMIN_README.md
 __pycache__/
 *.pyc
 .venv/

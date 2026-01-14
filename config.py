@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     mail_username: str
     mail_password: str
 
+    # API key for protected endpoints
+    api_key: str
+
     # Repository URLs
     canadian_internships_url: str = "https://github.com/negarprh/Canadian-Tech-Internships-2026"
     us_internships_url: str = "https://github.com/SimplifyJobs/Summer2026-Internships/tree/dev"
