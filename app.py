@@ -33,7 +33,7 @@ def require_api_key(f):
 
 
 DEFAULT_STATE = {
-    "emails": ["thomaszhang475178@gmail.com","yihanhon@usc.edu","lishawn81@gmail.com"],
+    "emails": ["thomaszhang475178@gmail.com"],
     "canadian_internships": {
         "company": "Genesys",
         "role": "Software Development Intern - Recording and QM",
@@ -141,8 +141,7 @@ def scrape():
     """Scrape repos and send notifications for new listings."""
     print("[SCRAPE] Starting...", flush=True)
     state = load_state()
-    emails_list = state.get("emails", {})
-    emails = list(emails_list.keys())
+    emails = state.get("emails", [])
     results = {}
 
     # Scrape Canadian Tech Internships
@@ -221,8 +220,8 @@ def health():
 def get_emails():
     """Get all subscribed emails."""
     state = load_state()
-    emails_list = state.get("emails", {})
-    return jsonify({"emails": list(emails_list.keys())})
+    emails = state.get("emails", [])
+    return jsonify({"emails": emails})
 
 
 @app.route("/listings", methods=["GET"])
@@ -295,12 +294,12 @@ def admin_unsubscribe(email: str):
     """Admin endpoint to remove any email."""
     email = email.strip()
     state = load_state()
-    emails_list = state.get("emails", {})
+    emails_list = state.get("emails", [])
 
     if email not in emails_list:
         return jsonify({"error": "Email not found"}), 404
 
-    del emails_list[email]
+    emails_list.remove(email)
     state["emails"] = emails_list
     save_state(state)
 
