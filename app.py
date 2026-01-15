@@ -9,7 +9,6 @@ from flask import Flask, jsonify, request
 from config import get_settings
 
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
-SCRIPT_DIR = Path(__file__).parent
 from scraper import Listing, scrape_canadian_internships, scrape_us_internships
 
 
@@ -32,7 +31,6 @@ def require_api_key(f):
 
 
 DEFAULT_STATE = {
-    "emails": ["thomaszhang475178@gmail.com"],
     "canadian_internships": {
         "company": "Genesys",
         "role": "Software Development Intern - Recording and QM",
@@ -102,6 +100,74 @@ def format_email_body(new_listings: list[Listing], repo_name: str) -> str:
 
     return body
 
+
+def get_all_brevo_contacts() -> list[str]:
+    """Fetch all contact emails from Brevo."""
+    try:
+        response = requests.get(
+            "https://api.brevo.com/v3/contacts",
+            headers={
+                "api-key": settings.brevo_api_key,
+                "Content-Type": "application/json"
+            },
+            params={"limit": 1000},  # Adjust if you have more contacts
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        return [contact["email"] for contact in data.get("contacts", [])]
+    except Exception as e:
+        print(f"[BREVO] Error fetching contacts: {e}", flush=True)
+        return []
+
+
+def add_brevo_contact(email: str) -> bool:
+    """Add contact to Brevo via API. Returns True if successful."""
+    payload = {
+        "email": email,
+        "updateEnabled": True
+    }
+    
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/contacts",
+            headers={
+                "api-key": settings.brevo_api_key,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=30
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.HTTPError as e:
+        # Contact might already exist (code 400 with "duplicate_parameter")
+        if e.response.status_code == 400:
+            return True  # Already exists, that's fine
+        print(f"[BREVO] Error adding contact: {e}", flush=True)
+        return False
+
+
+def delete_brevo_contact(email: str) -> bool:
+    """Delete contact from Brevo via API. Returns True if successful."""
+    try:
+        response = requests.delete(
+            f"https://api.brevo.com/v3/contacts/{email}",
+            headers={
+                "api-key": settings.brevo_api_key
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        return True
+    except requests.exceptions.HTTPError as e:
+        # Contact might not exist (404)
+        if e.response.status_code == 404:
+            return True  # Doesn't exist, goal achieved
+        print(f"[BREVO] Error deleting contact: {e}", flush=True)
+        return False
+
+
 def send_notification(new_listings: list[Listing], repo_name: str, emails: list[str]) -> None:
     """Send email notification for new listings via Brevo API."""
     if not emails:
@@ -140,52 +206,16 @@ def send_notification(new_listings: list[Listing], repo_name: str, emails: list[
             print(f"[EMAIL] Response: {e.response.text}", flush=True)
 
 
-def add_brevo_contact(email: str) -> None:
-    """Add contact to Brevo via API."""
-    payload = {
-        "email": email,
-        "updateEnabled": True
-    }
-    
-    try:
-        response = requests.post(
-            "https://api.brevo.com/v3/contacts",
-            headers={
-                "api-key": settings.brevo_api_key,
-                "Content-Type": "application/json"
-            },
-            json=payload,
-            timeout=30
-        )
-        response.raise_for_status()
-    except requests.exceptions.HTTPError:
-        # Contact might already exist, that's okay
-        pass
-
-
-def delete_brevo_contact(email: str) -> None:
-    """Delete contact from Brevo via API."""
-    try:
-        response = requests.delete(
-            f"https://api.brevo.com/v3/contacts/{email}",
-            headers={
-                "api-key": settings.brevo_api_key
-            },
-            timeout=30
-        )
-        response.raise_for_status()
-    except requests.exceptions.HTTPError:
-        # Contact might not exist, that's okay
-        pass
-
-
 @app.route("/scrape", methods=["GET"])
 @require_api_key
 def scrape():
     """Scrape repos and send notifications for new listings."""
     print("[SCRAPE] Starting...", flush=True)
     state = load_state()
-    emails = state.get("emails", [])
+    
+    emails = get_all_brevo_contacts()
+    print(f"[SCRAPE] Found {len(emails)} subscribers in Brevo", flush=True)
+    
     results = {}
 
     # Scrape Canadian Tech Internships
@@ -262,10 +292,9 @@ def health():
 @app.route("/emails", methods=["GET"])
 @require_api_key
 def get_emails():
-    """Get all subscribed emails."""
-    state = load_state()
-    emails = state.get("emails", [])
-    return jsonify({"emails": emails})
+    """Get all subscribed emails from Brevo."""
+    emails = get_all_brevo_contacts()
+    return jsonify({"emails": emails, "count": len(emails)})
 
 
 @app.route("/listings", methods=["GET"])
@@ -289,18 +318,11 @@ def subscribe(email: str):
     if not EMAIL_REGEX.match(email):
         return jsonify({"error": "Invalid email format"}), 400
 
-    state = load_state()
-    emails_list = state.get("emails", [])
-
-    if email in emails_list:
-        return jsonify({"message": "Already subscribed", "email": email})
-
-    emails_list.append(email)
-    state["emails"] = emails_list
-    save_state(state)
-
     # Add to Brevo contacts
-    add_brevo_contact(email)
+    success = add_brevo_contact(email)
+    
+    if not success:
+        return jsonify({"error": "Failed to subscribe. Please try again."}), 500
 
     return jsonify({
         "message": "Subscribed",
@@ -336,19 +358,14 @@ def subscribe(email: str):
 @require_api_key
 def admin_unsubscribe(email: str):
     """Admin endpoint to remove any email."""
-    email = email.strip()
-    state = load_state()
-    emails_list = state.get("emails", [])
-
-    if email not in emails_list:
-        return jsonify({"error": "Email not found"}), 404
-
-    emails_list.remove(email)
-    state["emails"] = emails_list
-    save_state(state)
-
-    # Remove from Brevo contacts
-    delete_brevo_contact(email)
+    
+    email = email.strip().lower()
+    
+    # Delete from Brevo contacts
+    success = delete_brevo_contact(email)
+    
+    if not success:
+        return jsonify({"error": "Failed to unsubscribe"}), 500
 
     return jsonify({"message": "Unsubscribed", "email": email})
 

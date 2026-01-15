@@ -6,6 +6,10 @@ class Settings(BaseSettings):
     # API key for protected endpoints
     api_key: str
 
+    # Brevo settings
+    brevo_api_key: str
+    mail_from: str
+    
     # Repository URLs
     canadian_internships_url: str = "https://github.com/negarprh/Canadian-Tech-Internships-2026"
     us_internships_url: str = "https://github.com/SimplifyJobs/Summer2026-Internships/tree/dev"
