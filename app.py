@@ -141,10 +141,20 @@ def add_brevo_contact(email: str) -> bool:
         response.raise_for_status()
         return True
     except requests.exceptions.HTTPError as e:
-        # Contact might already exist (code 400 with "duplicate_parameter")
+        # Check if it's a duplicate contact error
         if e.response.status_code == 400:
-            return True  # Already exists, that's fine
+            try:
+                error_data = e.response.json()
+                if error_data.get("code") == "duplicate_parameter":
+                    return True  # Already exists, that's fine
+            except:
+                pass
         print(f"[BREVO] Error adding contact: {e}", flush=True)
+        if hasattr(e, 'response') and e.response:
+            print(f"[BREVO] Response: {e.response.text}", flush=True)
+        return False
+    except Exception as e:
+        print(f"[BREVO] Unexpected error adding contact: {e}", flush=True)
         return False
 
 
