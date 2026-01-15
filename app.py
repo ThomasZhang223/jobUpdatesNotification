@@ -1,6 +1,6 @@
 import json
 import re
-import subprocess
+import requests
 from functools import wraps
 from pathlib import Path
 
@@ -102,36 +102,81 @@ def format_email_body(new_listings: list[Listing], repo_name: str) -> str:
 
     return body
 
-
 def send_notification(new_listings: list[Listing], repo_name: str, emails: list[str]) -> None:
-    """Send email notification for new listings via Brevo bash script."""
+    """Send email notification for new listings via Brevo API."""
     if not emails:
         return
 
     body_text = format_email_body(new_listings, repo_name)
     subject = f"New Internship Listings - {repo_name}"
-    emails_str = ",".join(emails)
-
-    subprocess.run(
-        ["bash", str(SCRIPT_DIR / "brevo_send_email.sh"), emails_str, subject, body_text],
-        timeout=60
-    )
+    
+    # Build recipients array
+    to_array = [{"email": email} for email in emails]
+    
+    # Build JSON payload - requests will handle JSON encoding properly
+    payload = {
+        "sender": {"email": settings.mail_from, "name": "JobFlow"},
+        "to": to_array,
+        "subject": subject,
+        "textContent": body_text
+    }
+    
+    # Send via Brevo API
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": settings.brevo_api_key,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        print(f"[EMAIL] Successfully sent to {len(emails)} recipients", flush=True)
+    except Exception as e:
+        print(f"[EMAIL] Error sending: {e}", flush=True)
+        if hasattr(e, 'response') and e.response:
+            print(f"[EMAIL] Response: {e.response.text}", flush=True)
 
 
 def add_brevo_contact(email: str) -> None:
-    """Add contact to Brevo via bash script."""
-    subprocess.run(
-        ["bash", str(SCRIPT_DIR / "brevo_add_contact.sh"), email],
-        timeout=30
-    )
+    """Add contact to Brevo via API."""
+    payload = {
+        "email": email,
+        "updateEnabled": True
+    }
+    
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/contacts",
+            headers={
+                "api-key": settings.brevo_api_key,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=30
+        )
+        response.raise_for_status()
+    except requests.exceptions.HTTPError:
+        # Contact might already exist, that's okay
+        pass
 
 
 def delete_brevo_contact(email: str) -> None:
-    """Delete contact from Brevo via bash script."""
-    subprocess.run(
-        ["bash", str(SCRIPT_DIR / "brevo_delete_contact.sh"), email],
-        timeout=30
-    )
+    """Delete contact from Brevo via API."""
+    try:
+        response = requests.delete(
+            f"https://api.brevo.com/v3/contacts/{email}",
+            headers={
+                "api-key": settings.brevo_api_key
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+    except requests.exceptions.HTTPError:
+        # Contact might not exist, that's okay
+        pass
 
 
 @app.route("/scrape", methods=["GET"])
