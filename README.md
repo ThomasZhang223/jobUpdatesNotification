@@ -1,4 +1,4 @@
-# Job Updates Notification
+# JobFlow
 
 Get email notifications when new internship listings are posted to popular GitHub repositories.
 
@@ -16,31 +16,22 @@ The service periodically checks for new internship listings. When new positions 
 To receive notifications, send a POST request:
 
 ```bash
-curl -X POST https://jobupdatesnotification.onrender.com/subscribe/<your-email@example.com>
+curl -X POST https://jobupdatesnotification.onrender.com/subscribe/your-email@example.com
 ```
 
 **Response:**
 ```json
 {
   "message": "Subscribed",
-  "email": "your-email@example.com",
-  "private_key": "abc123...",
-  "note": "Save this key to unsubscribe later"
+  "email": "your-email@example.com"
 }
 ```
 
-**Important:** Save your `private_key` - you'll need it to unsubscribe.
-
 ## Unsubscribe
 
-To stop receiving notifications:
-
-```bash
-curl -X DELETE https://jobupdatesnotification.onrender.com/unsubscribe/<your-email@example.com>/<your-private-key>
-```
+To stop receiving notifications, contact the administrator.
 
 ## Privacy
 
 - Your email is stored securely and only used for job notifications
-- Email addresses are hidden from other subscribers (BCC)
 - No data is shared with third parties

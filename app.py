@@ -1,28 +1,22 @@
 import json
 import re
 import secrets
+import subprocess
 from functools import wraps
 from pathlib import Path
 
-EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 from flask import Flask, jsonify, request
-from flask_mail import Mail, Message
 
 from config import get_settings
+
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+SCRIPT_DIR = Path(__file__).parent
 from scraper import Listing, scrape_canadian_internships, scrape_us_internships
 
 
 app = Flask(__name__)
 settings = get_settings()
 
-# Configure Flask-Mail
-app.config["MAIL_SERVER"] = settings.mail_server
-app.config["MAIL_PORT"] = settings.mail_port
-app.config["MAIL_USE_TLS"] = settings.mail_use_tls
-app.config["MAIL_USERNAME"] = settings.mail_username
-app.config["MAIL_PASSWORD"] = settings.mail_password
-
-mail = Mail(app)
 
 STATE_FILE = Path(__file__).parent / "state.json"
 
@@ -39,7 +33,7 @@ def require_api_key(f):
 
 
 DEFAULT_STATE = {
-    "emails": {},
+    "emails": ["thomaszhang475178@gmail.com","yihanhon@usc.edu","lishawn81@gmail.com"],
     "canadian_internships": {
         "company": "Genesys",
         "role": "Software Development Intern - Recording and QM",
@@ -111,18 +105,34 @@ def format_email_body(new_listings: list[Listing], repo_name: str) -> str:
 
 
 def send_notification(new_listings: list[Listing], repo_name: str, emails: list[str]) -> None:
-    """Send email notification for new listings."""
+    """Send email notification for new listings via Brevo bash script."""
     if not emails:
         return
 
-    with app.app_context():
-        msg = Message(
-            subject=f"New Internship Listings - {repo_name}",
-            sender=settings.mail_username,
-            bcc=emails,
-            body=format_email_body(new_listings, repo_name),
-        )
-        mail.send(msg)
+    body_text = format_email_body(new_listings, repo_name)
+    subject = f"New Internship Listings - {repo_name}"
+    emails_str = ",".join(emails)
+
+    subprocess.run(
+        ["bash", str(SCRIPT_DIR / "brevo_send_email.sh"), emails_str, subject, body_text],
+        timeout=60
+    )
+
+
+def add_brevo_contact(email: str) -> None:
+    """Add contact to Brevo via bash script."""
+    subprocess.run(
+        ["bash", str(SCRIPT_DIR / "brevo_add_contact.sh"), email],
+        timeout=30
+    )
+
+
+def delete_brevo_contact(email: str) -> None:
+    """Delete contact from Brevo via bash script."""
+    subprocess.run(
+        ["bash", str(SCRIPT_DIR / "brevo_delete_contact.sh"), email],
+        timeout=30
+    )
 
 
 @app.route("/scrape", methods=["GET"])
@@ -131,8 +141,8 @@ def scrape():
     """Scrape repos and send notifications for new listings."""
     print("[SCRAPE] Starting...", flush=True)
     state = load_state()
-    emails_dict = state.get("emails", {})
-    emails = list(emails_dict.keys())
+    emails_list = state.get("emails", {})
+    emails = list(emails_list.keys())
     results = {}
 
     # Scrape Canadian Tech Internships
@@ -211,8 +221,8 @@ def health():
 def get_emails():
     """Get all subscribed emails."""
     state = load_state()
-    emails_dict = state.get("emails", {})
-    return jsonify({"emails": list(emails_dict.keys())})
+    emails_list = state.get("emails", {})
+    return jsonify({"emails": list(emails_list.keys())})
 
 
 @app.route("/listings", methods=["GET"])
@@ -237,43 +247,46 @@ def subscribe(email: str):
         return jsonify({"error": "Invalid email format"}), 400
 
     state = load_state()
-    emails_dict = state.get("emails", {})
+    emails_list = state.get("emails", [])
 
-    if email in emails_dict:
+    if email in emails_list:
         return jsonify({"message": "Already subscribed", "email": email})
 
-    # Generate private key for this user
-    private_key = secrets.token_hex(16)
-    emails_dict[email] = private_key
-    state["emails"] = emails_dict
+    emails_list.append(email)
+    state["emails"] = emails_list
     save_state(state)
+
+    # Add to Brevo contacts
+    add_brevo_contact(email)
 
     return jsonify({
         "message": "Subscribed",
         "email": email,
-        "private_key": private_key,
         "note": "Save this key to unsubscribe later"
     })
 
 
-@app.route("/unsubscribe/<email>/<key>", methods=["DELETE"])
-def unsubscribe(email: str, key: str):
-    """Public endpoint for users to unsubscribe using their private key."""
-    email = email.strip()
-    state = load_state()
-    emails_dict = state.get("emails", {})
+# @app.route("/unsubscribe/<email>/<key>", methods=["DELETE"])
+# def unsubscribe(email: str, key: str):
+#     """Public endpoint for users to unsubscribe using their private key."""
+#     email = email.strip()
+#     state = load_state()
+#     emails_list = state.get("emails", {})
 
-    if email not in emails_dict:
-        return jsonify({"error": "Email not found"}), 404
+#     if email not in emails_list:
+#         return jsonify({"error": "Email not found"}), 404
 
-    if emails_dict[email] != key:
-        return jsonify({"error": "Invalid key"}), 403
+#     if emails_list[email] != key:
+#         return jsonify({"error": "Invalid key"}), 403
 
-    del emails_dict[email]
-    state["emails"] = emails_dict
-    save_state(state)
+#     del emails_list[email]
+#     state["emails"] = emails_list
+#     save_state(state)
 
-    return jsonify({"message": "Unsubscribed", "email": email})
+#     # Remove from Brevo contacts
+#     delete_brevo_contact(email)
+
+#     return jsonify({"message": "Unsubscribed", "email": email})
 
 
 @app.route("/admin/unsubscribe/<email>", methods=["DELETE"])
@@ -282,14 +295,17 @@ def admin_unsubscribe(email: str):
     """Admin endpoint to remove any email."""
     email = email.strip()
     state = load_state()
-    emails_dict = state.get("emails", {})
+    emails_list = state.get("emails", {})
 
-    if email not in emails_dict:
+    if email not in emails_list:
         return jsonify({"error": "Email not found"}), 404
 
-    del emails_dict[email]
-    state["emails"] = emails_dict
+    del emails_list[email]
+    state["emails"] = emails_list
     save_state(state)
+
+    # Remove from Brevo contacts
+    delete_brevo_contact(email)
 
     return jsonify({"message": "Unsubscribed", "email": email})
 
