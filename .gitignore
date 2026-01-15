@@ -2,7 +2,6 @@
 state.json
 ADMIN_README.md
 run_test.sh
-brevo_*.sh
 test_scrape.py
 __pycache__/
 *.pyc

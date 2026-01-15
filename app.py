@@ -261,7 +261,7 @@ def subscribe(email: str):
     return jsonify({
         "message": "Subscribed",
         "email": email,
-        "note": "Save this key to unsubscribe later"
+        "note": "Please check spam for update emails"
     })
 
 
