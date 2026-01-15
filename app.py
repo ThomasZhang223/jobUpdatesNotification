@@ -110,12 +110,18 @@ def get_all_brevo_contacts() -> list[str]:
                 "api-key": settings.brevo_api_key,
                 "Content-Type": "application/json"
             },
-            params={"limit": 1000},  # Adjust if you have more contacts
+            params={"limit": 1000},  # Get up to 1000 contacts
             timeout=30
         )
         response.raise_for_status()
         data = response.json()
-        return [contact["email"] for contact in data.get("contacts", [])]
+        
+        contacts = data.get("contacts", [])
+        emails = [contact.get("email") for contact in contacts if contact.get("email")]
+        
+        print(f"[BREVO] Successfully fetched {len(emails)} contacts", flush=True)
+        return emails
+        
     except Exception as e:
         print(f"[BREVO] Error fetching contacts: {e}", flush=True)
         return []
