@@ -11,18 +11,23 @@ TO_EMAILS="$1"
 SUBJECT="$2"
 BODY="$3"
 
-# Build recipients array
-TO_ARRAY=$(echo "$TO_EMAILS" | sed 's/,/\"},\{\"email\":\"/g' | sed 's/^/{\"email\":\"/' | sed 's/$/\"}/')
+# Build recipients array as JSON using jq
+TO_ARRAY=$(echo "$TO_EMAILS" | tr ',' '\n' | jq -R '{email: .}' | jq -s '.')
+
+# Build JSON payload with proper escaping
+JSON_PAYLOAD=$(jq -n \
+  --arg from_email "$MAIL_FROM" \
+  --arg subject "$SUBJECT" \
+  --arg body "$BODY" \
+  --argjson to "$TO_ARRAY" \
+  '{
+    sender: {email: $from_email, name: "JobFlow"},
+    to: $to,
+    subject: $subject,
+    textContent: $body
+  }')
 
 curl -s -X POST "https://api.brevo.com/v3/smtp/email" \
   -H "api-key: $BREVO_API_KEY" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"sender\": {
-      \"email\": \"$MAIL_FROM\",
-      \"name\": \"JobFlow\"
-    },
-    \"to\": [$TO_ARRAY],
-    \"subject\": \"$SUBJECT\",
-    \"textContent\": \"$BODY\"
-  }"
+  -d "$JSON_PAYLOAD"
