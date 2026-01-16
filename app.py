@@ -382,6 +382,12 @@ def scrape():
     return jsonify(results)
 
 
+@app.route("/ping", methods=["GET"])
+def ping():
+    """Simple ping endpoint to wake up the service."""
+    return "pong", 200
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint."""
