@@ -32,17 +32,17 @@ def require_api_key(f):
 
 DEFAULT_STATE = {
     "canadian_internships": {
-        "company": "Genesys",
-        "role": "Software Development Intern - Recording and QM",
-        "location": "Toronto, ON",
-        "apply_link": "https://genesys.wd1.myworkdayjobs.com/en-US/Genesys/job/Toronto-Flexible/Software-Development-Intern--Recording-and-QM--12-16mos-_JR109189",
-        "date_posted": "Jan 9",
+        "company": "PlayStation",
+        "role": "Software Developer Intern/Co-op - Back End - James Stewart",
+        "location": "Kitchener, ON",
+        "apply_link": "https://job-boards.greenhouse.io/waterloocoop/jobs/5763878004?utm_source=Simplify&ref=Simplify",
+        "date_posted": "Jan 13",
     },
     "us_internships": {
-        "company": "Kinaxis",
-        "role": "Intern/Co-op Software Developer - Core Algorithms",
-        "location": "Ottawa, ON, Canada",
-        "apply_link": "https://careers-kinaxis.icims.com/jobs/34146/job?mobile=true&needsRedirect=false&utm_source=Simplify&ref=Simplify",
+        "company": "\ud83d\udd25TikTok",
+        "role": "Software Engineer Intern - Ads Measurement Signal and Privacy",
+        "location": "San Jose, CA",
+        "apply_link": "https://lifeattiktok.com/search/7595305817516165381?utm_source=Simplify&ref=Simplify",
         "date_posted": "0d",
     },
 }
@@ -181,6 +181,84 @@ def delete_brevo_contact(email: str) -> bool:
         if e.response.status_code == 404:
             return True  # Doesn't exist, goal achieved
         print(f"[BREVO] Error deleting contact: {e}", flush=True)
+        return False
+
+
+def send_welcome_email(email: str) -> bool:
+    """Send welcome email to new subscriber. Returns True if successful."""
+    subject = "Welcome to JobFlow - Internship Notifications"
+    body_text = """Welcome to JobFlow!
+
+You've successfully subscribed to receive internship notifications.
+
+You'll now receive email alerts when new internship listings are posted for:
+- Canadian Tech Internships 2026
+- US Summer 2026 Internships
+
+Stay tuned for updates!
+"""
+
+    payload = {
+        "sender": {"email": settings.mail_from, "name": "JobFlow"},
+        "to": [{"email": email}],
+        "subject": subject,
+        "textContent": body_text
+    }
+
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": settings.brevo_api_key,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        print(f"[EMAIL] Welcome email sent to {email}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[EMAIL] Error sending welcome email: {e}", flush=True)
+        if hasattr(e, 'response') and e.response:
+            print(f"[EMAIL] Response: {e.response.text}", flush=True)
+        return False
+
+
+def send_unsubscribe_email(email: str) -> bool:
+    """Send confirmation email when user unsubscribes. Returns True if successful."""
+    subject = "You've Been Unsubscribed - JobFlow"
+    body_text = """You've been unsubscribed from JobFlow.
+
+You will no longer receive internship notification emails.
+
+If this was a mistake, you can re-subscribe at any time.
+"""
+
+    payload = {
+        "sender": {"email": settings.mail_from, "name": "JobFlow"},
+        "to": [{"email": email}],
+        "subject": subject,
+        "textContent": body_text
+    }
+
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": settings.brevo_api_key,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        print(f"[EMAIL] Unsubscribe confirmation sent to {email}", flush=True)
+        return True
+    except Exception as e:
+        print(f"[EMAIL] Error sending unsubscribe email: {e}", flush=True)
+        if hasattr(e, 'response') and e.response:
+            print(f"[EMAIL] Response: {e.response.text}", flush=True)
         return False
 
 
@@ -336,9 +414,12 @@ def subscribe(email: str):
 
     # Add to Brevo contacts
     success = add_brevo_contact(email)
-    
+
     if not success:
         return jsonify({"error": "Failed to subscribe. Please try again."}), 500
+
+    # Send welcome email to new subscriber
+    send_welcome_email(email)
 
     return jsonify({
         "message": "Subscribed",
@@ -374,16 +455,68 @@ def subscribe(email: str):
 @require_api_key
 def admin_unsubscribe(email: str):
     """Admin endpoint to remove any email."""
-    
+
     email = email.strip().lower()
-    
+
+    # Send unsubscribe confirmation email before removing contact
+    send_unsubscribe_email(email)
+
     # Delete from Brevo contacts
     success = delete_brevo_contact(email)
-    
+
     if not success:
         return jsonify({"error": "Failed to unsubscribe"}), 500
 
     return jsonify({"message": "Unsubscribed", "email": email})
+
+
+@app.route("/admin/broadcast", methods=["POST"])
+@require_api_key
+def admin_broadcast():
+    """Admin endpoint to send a custom message to all subscribers."""
+    data = request.get_json()
+
+    if not data or "message" not in data:
+        return jsonify({"error": "Missing 'message' field in request body"}), 400
+
+    message = data["message"]
+    if not isinstance(message, str) or not message.strip():
+        return jsonify({"error": "Message must be a non-empty string"}), 400
+
+    subject = data.get("subject", "JobFlow Announcement")
+
+    emails = get_all_brevo_contacts()
+    if not emails:
+        return jsonify({"error": "No subscribers found"}), 404
+
+    payload = {
+        "sender": {"email": settings.mail_from, "name": "JobFlow"},
+        "to": [{"email": email} for email in emails],
+        "subject": subject,
+        "textContent": message.strip()
+    }
+
+    try:
+        response = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": settings.brevo_api_key,
+                "Content-Type": "application/json"
+            },
+            json=payload,
+            timeout=60
+        )
+        response.raise_for_status()
+        print(f"[EMAIL] Broadcast sent to {len(emails)} recipients", flush=True)
+        return jsonify({
+            "message": "Broadcast sent",
+            "recipients": len(emails)
+        })
+    except Exception as e:
+        print(f"[EMAIL] Error sending broadcast: {e}", flush=True)
+        if hasattr(e, 'response') and e.response:
+            print(f"[EMAIL] Response: {e.response.text}", flush=True)
+        return jsonify({"error": "Failed to send broadcast"}), 500
 
 
 if __name__ == "__main__":

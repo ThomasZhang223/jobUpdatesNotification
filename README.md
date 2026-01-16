@@ -27,9 +27,11 @@ curl -X POST https://jobupdatesnotification.onrender.com/subscribe/your-email@ex
 }
 ```
 
+You will receive a welcome email confirming your subscription. Pleae check your spam/junk folder if you do not see it in your inbox.
+
 ## Unsubscribe
 
-To stop receiving notifications, contact the administrator.
+To stop receiving notifications, contact the administrator. You will receive a confirmation email when unsubscribed.
 
 ## Privacy
 
