@@ -270,15 +270,20 @@ def send_notification(new_listings: list[Listing], repo_name: str, emails: list[
     body_text = format_email_body(new_listings, repo_name)
     subject = f"New Internship Listings - {repo_name}"
     
-    # Build recipients array
-    to_array = [{"email": email} for email in emails]
+    # First recipient in "to", rest in "bcc" for privacy                           
+    bcc_array = [{"email": email} for email in emails[1:]] if len(emails) > 1 else [] 
     
     # Build JSON payload - requests will handle JSON encoding properly
     payload = {
         "sender": {"email": settings.mail_from, "name": "JobFlow"},
-        "to": to_array,
         "subject": subject,
-        "textContent": body_text
+        "textContent": body_text,
+        "messageVersions": [
+            {
+                "to": [{"email":emails[0]}],
+                "bcc": bcc_array
+            }
+        ]
     }
     
     # Send via Brevo API
@@ -489,11 +494,19 @@ def admin_broadcast():
     if not emails:
         return jsonify({"error": "No subscribers found"}), 404
 
+    # First recipient in "to", rest in "bcc" for privacy                           
+    bcc_array = [{"email": email} for email in emails[1:]] if len(emails) > 1 else [] 
+    
     payload = {
         "sender": {"email": settings.mail_from, "name": "JobFlow"},
-        "to": [{"email": email} for email in emails],
         "subject": subject,
-        "textContent": message.strip()
+        "textContent": message.strip(),
+        "messageVersions": [
+            {
+                "to": [{"email":emails[0]}],
+                "bcc": bcc_array
+            }
+        ]
     }
 
     try:
