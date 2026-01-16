@@ -271,7 +271,7 @@ def send_notification(new_listings: list[Listing], repo_name: str, emails: list[
     subject = f"New Internship Listings - {repo_name}"
     
     # First recipient in "to", rest in "bcc" for privacy                           
-    bcc_array = [{"email": email} for email in emails[1:]] if len(emails) > 1 else [] 
+    bcc_array = [{"email": email} for email in emails] 
     
     # Build JSON payload - requests will handle JSON encoding properly
     payload = {
@@ -280,7 +280,7 @@ def send_notification(new_listings: list[Listing], repo_name: str, emails: list[
         "textContent": body_text,
         "messageVersions": [
             {
-                "to": [{"email":emails[0]}],
+                "to": [{"email":settings.mail_from}],
                 "bcc": bcc_array
             }
         ]
@@ -495,7 +495,7 @@ def admin_broadcast():
         return jsonify({"error": "No subscribers found"}), 404
 
     # First recipient in "to", rest in "bcc" for privacy                           
-    bcc_array = [{"email": email} for email in emails[1:]] if len(emails) > 1 else [] 
+    bcc_array = [{"email": email} for email in emails] 
     
     payload = {
         "sender": {"email": settings.mail_from, "name": "JobFlow"},
@@ -503,7 +503,7 @@ def admin_broadcast():
         "textContent": message.strip(),
         "messageVersions": [
             {
-                "to": [{"email":emails[0]}],
+                "to": [{"email":settings.mail_from}],
                 "bcc": bcc_array
             }
         ]
