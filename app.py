@@ -1,8 +1,6 @@
-import json
 import re
 import requests
 from functools import wraps
-from pathlib import Path
 
 from flask import Flask, jsonify, request
 
@@ -16,7 +14,7 @@ app = Flask(__name__)
 settings = get_settings()
 
 
-STATE_FILE = Path(__file__).parent / "state.json"
+JSONBIN_URL = "https://api.jsonbin.io/v3/b/696e9788ae596e708fe75161"
 
 
 def require_api_key(f):
@@ -48,22 +46,40 @@ DEFAULT_STATE = {
 }
 
 
-def load_state() -> dict:
-    """Load state from JSON file, creating with defaults if not exists."""
-    if STATE_FILE.exists():
-        with open(STATE_FILE, "r") as f:
-            return json.load(f)
+def read_jsonbin() -> dict:
+    """Read state from JSONBin."""
+    try:
+        response = requests.get(
+            f"{JSONBIN_URL}/latest",
+            headers={"X-Access-Key": settings.jsonbin_api_key},
+            timeout=30
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get("record", DEFAULT_STATE.copy())
+    except Exception as e:
+        print(f"[JSONBIN] Error reading: {e}", flush=True)
+        return DEFAULT_STATE.copy()
 
-    # Create file with default state
-    with open(STATE_FILE, "w") as f:
-        json.dump(DEFAULT_STATE, f, indent=2)
-    return DEFAULT_STATE.copy()
 
-
-def save_state(state: dict) -> None:
-    """Save state to JSON file."""
-    with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+def update_jsonbin(state: dict) -> bool:
+    """Update state in JSONBin. Returns True if successful."""
+    try:
+        response = requests.put(
+            JSONBIN_URL,
+            headers={
+                "Content-Type": "application/json",
+                "X-Access-Key": settings.jsonbin_api_key
+            },
+            json=state,
+            timeout=30
+        )
+        response.raise_for_status()
+        print("[JSONBIN] State updated successfully", flush=True)
+        return True
+    except Exception as e:
+        print(f"[JSONBIN] Error updating: {e}", flush=True)
+        return False
 
 
 def find_new_listings(
@@ -310,7 +326,7 @@ def send_notification(new_listings: list[Listing], repo_name: str, emails: list[
 def scrape():
     """Scrape repos and send notifications for new listings."""
     print("[SCRAPE] Starting...", flush=True)
-    state = load_state()
+    state = read_jsonbin()
     
     emails = get_all_brevo_contacts()
     print(f"[SCRAPE] Found {len(emails)} subscribers in Brevo", flush=True)
@@ -377,7 +393,7 @@ def scrape():
     except Exception as e:
         results["us_internships"] = {"status": "error", "message": str(e)}
 
-    save_state(state)
+    update_jsonbin(state)
     print("[SCRAPE] Done!", flush=True)
     return jsonify(results)
 
@@ -405,8 +421,8 @@ def get_emails():
 @app.route("/listings", methods=["GET"])
 @require_api_key
 def get_listings():
-    """Get current top listings."""
-    state = load_state()
+    """Get current top listings from JSONBin."""
+    state = read_jsonbin()
     return jsonify({
         "canadian_internships": state.get("canadian_internships"),
         "us_internships": state.get("us_internships"),

@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     brevo_api_key: str
     mail_from: str
     
+    # JsonBin key
+    jsonbin_api_key: str
+    
     # Repository URLs
     canadian_internships_url: str = "https://github.com/negarprh/Canadian-Tech-Internships-2026"
     us_internships_url: str = "https://github.com/SimplifyJobs/Summer2026-Internships/tree/dev"
